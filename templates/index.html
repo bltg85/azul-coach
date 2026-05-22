@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Azul Coach</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="container">
+    <h1>🎲 Azul Coach</h1>
+
+    {% if view %}
+        <div class="flash">{{ view.message }}</div>
+    {% endif %}
+
+    <!-- New game form -->
+    <div class="card">
+        <form method="post" action="{{ url_for('new_game') }}" class="controls">
+            <label><strong>Opponents:</strong></label>
+            <input type="text" name="bots" value="{{ game.bot_specs|join(',') if game.bot_specs else 'heuristic,heuristic,heuristic' }}" size="40">
+            <label><strong>Seed:</strong></label>
+            <input type="number" name="seed" placeholder="random" size="10" title="Same seed = same factory shuffle and first player">
+            <button type="submit" class="primary">New game</button>
+            {% if game.seed and view and not view.game_over %}
+                <span style="color:var(--muted);font-size:12px;margin-left:8px">
+                    (current: seed <strong>{{ game.seed }}</strong>)
+                </span>
+            {% endif %}
+        </form>
+        {% if view and view.undo_count > 0 %}
+            <form method="post" action="{{ url_for('undo') }}" style="margin-top:8px">
+                <button type="submit" class="secondary" title="Rewind to before your last move">
+                    ↶ Undo last move ({{ view.undo_count }} available)
+                </button>
+            </form>
+        {% endif %}
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;">
+            Bot specs: <code>heuristic</code>, <code>mcts:300</code>, <code>mcts:1000</code>, <code>mcts:2000</code>.
+            Same seed = same tile shuffle &amp; starting player (heuristic bots play deterministically; MCTS adds its own randomness).
+        </div>
+    </div>
+
+    {% if view %}
+
+        {% if view.game_over %}
+            <div class="game-over">
+                <h2>Game over</h2>
+                <div class="final-scores">
+                    {% set winning = view.scores | max %}
+                    {% for p in view.players %}
+                        <div class="{% if view.scores[p.id] == winning %}winner{% endif %}">
+                            {{ p.name }}: {{ view.scores[p.id] }}
+                        </div>
+                    {% endfor %}
+                </div>
+                <form method="post" action="{{ url_for('new_game') }}" style="margin-top:16px">
+                    <input type="hidden" name="bots" value="{{ game.bot_specs|join(',') }}">
+                    <input type="hidden" name="seed" value="{{ game.seed }}">
+                    <button type="submit" class="primary">↻ Replay this seed</button>
+                    <a href="{{ url_for('index') }}" style="margin-left:12px;color:white;opacity:0.7">(or change setup above)</a>
+                </form>
+                <div style="margin-top:8px;font-size:11px;opacity:0.7">
+                    Seed: {{ game.seed }} · Saved to:
+                    games/{{ (game.saved_path.replace('\\', '/').split('/') | last) if game.saved_path else '(not saved)' }}
+                </div>
+            </div>
+        {% endif %}
+
+        {% if view.pending %}
+            <div class="pending-banner">
+                <span>
+                    Selected: <strong>{{ view.pending.source_label }}</strong>
+                    →
+                    {% set pcount = view.destinations[0].to_line + view.destinations[0].to_floor if view.destinations else 0 %}
+                    <span class="tile tile-small tile-{{ view.pending.tile }}">{{ view.pending.tile }}</span>
+                    <strong>Click a pattern line on your board, or the floor.</strong>
+                </span>
+                <form method="post" action="{{ url_for('cancel_selection') }}" style="display:inline;margin-left:auto">
+                    <button class="secondary" type="submit">Cancel</button>
+                </form>
+            </div>
+        {% endif %}
+
+        <div class="grid layout">
+            <div>
+                <!-- Factories + centre -->
+                <div class="card">
+                    <h2>Factories</h2>
+                    <div class="factories">
+                        {% for f in view.factories %}
+                            <div class="factory {% if f.empty %}empty{% endif %}">
+                                {% if view.is_user_turn and not f.empty %}
+                                    {% for g in f.groups %}
+                                        <form method="post" action="{{ url_for('select_source') }}">
+                                            <input type="hidden" name="source" value="factory">
+                                            <input type="hidden" name="id" value="{{ f.id }}">
+                                            <input type="hidden" name="tile" value="{{ g.tile_id }}">
+                                            <button class="tile-group" type="submit" title="{{ g.count }}× {{ g.tile }}">
+                                                {% for _ in range(g.count) %}
+                                                    <span class="tile tile-small tile-{{ g.tile }}">{{ g.tile }}</span>
+                                                {% endfor %}
+                                            </button>
+                                        </form>
+                                    {% endfor %}
+                                {% else %}
+                                    {% for g in f.groups %}
+                                        {% for _ in range(g.count) %}
+                                            <span class="tile tile-small tile-{{ g.tile }}">{{ g.tile }}</span>
+                                        {% endfor %}
+                                    {% endfor %}
+                                {% endif %}
+                                <div class="factory-label">F{{ f.id + 1 }}</div>
+                            </div>
+                        {% endfor %}
+                    </div>
+
+                    <h2 style="margin-top:24px">Centre</h2>
+                    <div class="centre {% if view.centre.empty %}empty{% endif %}">
+                        {% if view.centre.first_player_token %}
+                            <span class="tile tile-small tile-token" title="First player token">1</span>
+                        {% endif %}
+                        {% if view.is_user_turn %}
+                            {% for g in view.centre.groups %}
+                                <form method="post" action="{{ url_for('select_source') }}" style="display:inline">
+                                    <input type="hidden" name="source" value="centre">
+                                    <input type="hidden" name="id" value="-1">
+                                    <input type="hidden" name="tile" value="{{ g.tile_id }}">
+                                    <button class="tile-group" type="submit" title="{{ g.count }}× {{ g.tile }}">
+                                        {% for _ in range(g.count) %}
+                                            <span class="tile tile-small tile-{{ g.tile }}">{{ g.tile }}</span>
+                                        {% endfor %}
+                                    </button>
+                                </form>
+                            {% endfor %}
+                        {% else %}
+                            {% for g in view.centre.groups %}
+                                {% for _ in range(g.count) %}
+                                    <span class="tile tile-small tile-{{ g.tile }}">{{ g.tile }}</span>
+                                {% endfor %}
+                            {% endfor %}
+                        {% endif %}
+                        {% if view.centre.empty %}
+                            <span style="color:var(--muted);font-size:12px">empty</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Players -->
+                <div class="players">
+                    {% for p in view.players %}
+                        <div class="player {% if p.is_user %}is-user{% endif %} {% if p.is_current %}is-current{% endif %}">
+                            {% if p.is_current %}<span class="turn-marker">TURN</span>{% endif %}
+                            <div class="player-head">
+                                <div class="player-name {% if p.is_user %}you{% endif %}">{{ p.name }}</div>
+                                <div class="player-score">{{ p.score }}</div>
+                            </div>
+                            <div class="board">
+                                {% for line in p.lines %}
+                                    {% set line_idx = loop.index0 %}
+                                    {% set clickable = p.is_user and view.pending and line_idx in view.valid_dests %}
+                                    {% set dimmed = p.is_user and view.pending and line_idx not in view.valid_dests %}
+                                    {% if clickable %}
+                                        <form method="post" action="{{ url_for('place') }}" style="display:contents">
+                                            <input type="hidden" name="dest" value="{{ line_idx }}">
+                                            <button type="submit" class="pattern-line clickable" title="Place here (+{{ view.valid_dests[line_idx].to_floor }} to floor)">
+                                                {% for _ in range(line.size - line.count) %}
+                                                    <span class="tile tile-small tile-empty"></span>
+                                                {% endfor %}
+                                                {% for _ in range(line.count) %}
+                                                    <span class="tile tile-small tile-{{ line.tile }}">{{ line.tile }}</span>
+                                                {% endfor %}
+                                            </button>
+                                        </form>
+                                    {% else %}
+                                        <div class="pattern-line {% if dimmed %}dimmed{% endif %}">
+                                            {% for _ in range(line.size - line.count) %}
+                                                <span class="tile tile-small tile-empty"></span>
+                                            {% endfor %}
+                                            {% for _ in range(line.count) %}
+                                                <span class="tile tile-small tile-{{ line.tile }}">{{ line.tile }}</span>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <div class="wall-row" style="display:flex;gap:2px">
+                                        {% for c in p.wall[line_idx] %}
+                                            <span class="tile tile-small tile-{{ c.tile }} {% if c.filled %}filled{% endif %}">{{ c.tile }}</span>
+                                        {% endfor %}
+                                    </div>
+                                {% endfor %}
+                            </div>
+                            {% set floor_clickable = p.is_user and view.pending and -1 in view.valid_dests %}
+                            {% if floor_clickable %}
+                                <form method="post" action="{{ url_for('place') }}" style="display:contents">
+                                    <input type="hidden" name="dest" value="-1">
+                                    <button type="submit" class="floor clickable" title="Send all to floor">
+                                        <small style="color:var(--muted);margin-right:4px">Floor:</small>
+                                        {% for f in p.floor %}
+                                            <div class="floor-slot">
+                                                {% if f.filled %}
+                                                    {% if f.tile == "1" %}
+                                                        <span class="tile tile-small tile-token">1</span>
+                                                    {% else %}
+                                                        <span class="tile tile-small tile-{{ f.tile }}">{{ f.tile }}</span>
+                                                    {% endif %}
+                                                {% else %}
+                                                    <span class="tile tile-small tile-empty"></span>
+                                                {% endif %}
+                                                <span class="penalty">{{ f.penalty }}</span>
+                                            </div>
+                                        {% endfor %}
+                                    </button>
+                                </form>
+                            {% else %}
+                                <div class="floor">
+                                    <small style="color:var(--muted);margin-right:4px">Floor:</small>
+                                    {% for f in p.floor %}
+                                        <div class="floor-slot">
+                                            {% if f.filled %}
+                                                {% if f.tile == "1" %}
+                                                    <span class="tile tile-small tile-token">1</span>
+                                                {% else %}
+                                                    <span class="tile tile-small tile-{{ f.tile }}">{{ f.tile }}</span>
+                                                {% endif %}
+                                            {% else %}
+                                                <span class="tile tile-small tile-empty"></span>
+                                            {% endif %}
+                                            <span class="penalty">{{ f.penalty }}</span>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Sidebar: coach + log -->
+            <div>
+                <div class="card coach-card">
+                    <h3>🧠 Coach</h3>
+                    {% if view.is_user_turn %}
+                        <form method="post" action="{{ url_for('get_coach') }}">
+                            <label style="font-size:12px">Iterations:</label>
+                            <select name="iter">
+                                <option value="300">300 (fast)</option>
+                                <option value="1000" selected>1000 (~5s)</option>
+                                <option value="2000">2000 (~10s)</option>
+                            </select>
+                            <button type="submit" class="primary" style="margin-top:8px;width:100%">
+                                Ask coach for top moves
+                            </button>
+                        </form>
+                    {% else %}
+                        <div style="color:var(--muted);font-size:12px">Coach is available on your turn.</div>
+                    {% endif %}
+
+                    {% if view.coach %}
+                        <div style="margin-top:12px;font-size:11px;color:var(--muted)">
+                            {{ view.coach.iterations }} iter / {{ "%.1f"|format(view.coach.elapsed_s) }}s
+                        </div>
+                        {% for c in view.coach.candidates %}
+                            <div class="coach-candidate {% if loop.first %}best{% endif %}">
+                                <div style="display:flex;justify-content:space-between">
+                                    <strong>#{{ loop.index }}</strong>
+                                    <span class="coach-meta">{{ c.visits }} visits · value {{ "%.2f"|format(c.value) }}</span>
+                                </div>
+                                <div>
+                                    Take {{ c.count }}×
+                                    <span class="tile tile-small tile-{{ c.tile }}">{{ c.tile }}</span>
+                                    from {{ c.source }}
+                                </div>
+                                <div class="coach-meta">→ {{ c.dest }}{% if c.to_floor > 0 %} ({{ c.to_floor }} to floor){% endif %}</div>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+                <div class="card">
+                    <h3>📜 Log</h3>
+                    <div class="log">
+                        {% for line in view.log | reverse %}
+                            <div>{{ line }}</div>
+                        {% endfor %}
+                        {% if not view.log %}
+                            <div style="opacity:0.5">No moves yet</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    {% endif %}
+</div>
+</body>
+</html>

@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.log
+*.png
+games/
+bench_results.json
+bench20.txt
+bench_mcts_vs_heur.txt
+bench_suite.log
+.venv/
+venv/
+.env
+.DS_Store
