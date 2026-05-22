@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: azul-coach
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -w 1 -t 180 -b 0.0.0.0:$PORT webapp:app
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: MAX_COACH_ITER
+        value: "400"
+      - key: MAX_BOT_MCTS_ITER
+        value: "400"
+      - key: DISABLE_LOG_SAVE
+        value: "1"
+      - key: PYTHON_VERSION
+        value: "3.12.3"
