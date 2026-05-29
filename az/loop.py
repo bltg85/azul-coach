@@ -28,6 +28,10 @@ def main():
     ap.add_argument("--epochs", type=int, default=15)
     ap.add_argument("--buffer", type=int, default=3, help="recent iters to train on")
     ap.add_argument("--workers", type=int, default=1, help="parallel self-play processes")
+    ap.add_argument("--entropy", type=float, default=0.0, help="policy entropy bonus")
+    ap.add_argument("--anchor", default=None,
+                    help="dataset always mixed into training (e.g. bootstrap data) "
+                         "so the net doesn't forget heuristic-level play")
     ap.add_argument("--out-dir", default="runs/loop")
     ap.add_argument("--init", default=None, help="warm-start weights for iter 0")
     args = ap.parse_args()
@@ -61,8 +65,11 @@ def main():
             lo = max(0, i - args.buffer + 1)
             recent = [os.path.join(data_dir, f"sp{j}.npz") for j in range(lo, i + 1)]
             recent = [p for p in recent if os.path.exists(p)]
+            if args.anchor and os.path.exists(args.anchor):
+                recent.append(args.anchor)
             cmd = [py, "-m", "az.train", "--data", *recent,
-                   "--epochs", str(args.epochs), "--out", weights_path]
+                   "--epochs", str(args.epochs), "--out", weights_path,
+                   "--entropy", str(args.entropy)]
             if prev:
                 cmd += ["--init", prev]
             _run(cmd)
