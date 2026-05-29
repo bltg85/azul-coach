@@ -11,7 +11,7 @@ COPY . .
 # SUPABASE_URL / SUPABASE_KEY are set as Space secrets, not baked in here.
 ENV PORT=7860 \
     MAX_COACH_ITER=400 \
-    BOT_TIME_BUDGET_S=2.0 \
+    BOT_TIME_BUDGET_S=0.5 \
     DISABLE_LOG_SAVE=1
 
 EXPOSE 7860
