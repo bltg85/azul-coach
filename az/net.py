@@ -58,6 +58,9 @@ class NumpyNet:
         return policy, value
 
     def save(self, path):
+        import os
+        d = os.path.dirname(os.path.abspath(path))
+        os.makedirs(d, exist_ok=True)
         np.savez(path, **self.weights)
 
     @classmethod
