@@ -601,7 +601,14 @@ def get_coach():
 
 @app.route("/healthz")
 def healthz():
-    return {"ok": True, "active_sessions": len(GAMES)}
+    return {
+        "ok": True,
+        "active_sessions": len(GAMES),
+        # Diagnostics: confirms the deploy picked up the new code and whether
+        # game logging is wired. Never exposes the key itself.
+        "supabase_configured": bool(SUPABASE_URL and SUPABASE_KEY),
+        "bot_time_budget_s": BOT_TIME_BUDGET_S,
+    }
 
 
 if __name__ == "__main__":
