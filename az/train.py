@@ -41,6 +41,9 @@ def main():
     ap.add_argument("--batch", type=int, default=512)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--init", default=None, help="warm-start from a NumpyNet .npz")
+    ap.add_argument("--entropy", type=float, default=0.0,
+                    help="entropy bonus on the policy (guards against collapse "
+                         "during self-play; e.g. 0.001)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
@@ -76,6 +79,10 @@ def main():
             policy_loss = -(pb * logp).sum(dim=1).mean()
             value_loss = F.mse_loss(value, vb)
             loss = policy_loss + value_loss
+            if args.entropy > 0:
+                p = logp.exp()
+                entropy = -(p * logp).sum(dim=1).mean()
+                loss = loss - args.entropy * entropy
             opt.zero_grad()
             loss.backward()
             opt.step()

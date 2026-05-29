@@ -24,7 +24,7 @@ from az import NUM_PLAYERS  # noqa: E402
 from az.actions import ACTION_SIZE  # noqa: E402
 from az.encoder import FEATURE_SIZE  # noqa: E402
 from az.encoder import encode  # noqa: E402
-from az.mcts_az import az_search, policy_from_visits, _normalise_scores  # noqa: E402
+from az.mcts_az import az_search, policy_from_visits, placement_values  # noqa: E402
 from az.net import NumpyNet, random_numpynet  # noqa: E402
 from agents.sim import AzulSim  # noqa: E402
 
@@ -63,7 +63,7 @@ def play_game(evaluator, n_sims, c_puct=1.5, rng=None):
         ply += 1
 
     n = len(sim.gs.players)
-    norm_final = _normalise_scores(sim.scores())
+    norm_final = placement_values(sim.scores())
     X = np.asarray(feats_log, dtype=np.float32)
     P = np.asarray(pi_log, dtype=np.float32)
     V = np.zeros((len(seat_log), NUM_PLAYERS), dtype=np.float32)
