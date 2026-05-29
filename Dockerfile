@@ -8,9 +8,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Hugging Face Spaces expects the app to listen on $PORT (default 7860).
+# SUPABASE_URL / SUPABASE_KEY are set as Space secrets, not baked in here.
 ENV PORT=7860 \
     MAX_COACH_ITER=400 \
-    MAX_BOT_MCTS_ITER=400 \
+    BOT_TIME_BUDGET_S=2.0 \
     DISABLE_LOG_SAVE=1
 
 EXPOSE 7860
