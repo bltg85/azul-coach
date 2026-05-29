@@ -16,10 +16,19 @@ Env vars:
     SECRET_KEY        Flask session signing key (required in prod).
     MAX_COACH_ITER    Upper bound on MCTS coach iterations (default 2000;
                       set lower on shared-CPU hosts).
-    MAX_BOT_MCTS_ITER Upper bound on MCTS iter for opponent bots.
+    BOT_TIME_BUDGET_S Seconds of MCTS thinking per opponent move (default
+                      2.0). The opponent is always the strongest bot we
+                      have; this dial trades strength for responsiveness.
+    BOT_MCTS_ITER     If >0, use a fixed MCTS iteration count for the
+                      opponent instead of the time budget (handy for
+                      reproducible benchmarking).
     MAX_SESSIONS      Cap on concurrent live games (default 50).
     DISABLE_LOG_SAVE  Set to "1" to skip writing games/*.json (cloud disks
                       are usually ephemeral so the files vanish anyway).
+                      Supabase persistence is independent of this flag.
+    SUPABASE_URL      Project URL (https://<ref>.supabase.co). If set
+    SUPABASE_KEY      together with a service-role key, every finished game
+                      is persisted to the azul_games table (best-effort).
 """
 import datetime
 import json
@@ -28,6 +37,7 @@ import secrets
 import sys
 import threading
 import time
+import urllib.request
 from copy import deepcopy
 
 from flask import Flask, redirect, render_template, request, session, url_for
@@ -36,7 +46,6 @@ import _framework_path  # noqa: F401
 from model import GameState, PlayerState  # noqa: E402
 from utils import Move, MoveToString, Tile  # noqa: E402
 
-from agents.heuristic import HeuristicPlayer  # noqa: E402
 from agents.mcts import MCTSPlayer  # noqa: E402
 from agents.sim import AzulSim  # noqa: E402
 
@@ -49,10 +58,19 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
 MAX_COACH_ITER = int(os.environ.get("MAX_COACH_ITER", "2000"))
-MAX_BOT_MCTS_ITER = int(os.environ.get("MAX_BOT_MCTS_ITER", "2000"))
 MAX_SESSIONS = int(os.environ.get("MAX_SESSIONS", "50"))
 SESSION_TTL_S = int(os.environ.get("SESSION_TTL_S", "3600"))
 DISABLE_LOG_SAVE = os.environ.get("DISABLE_LOG_SAVE", "0") == "1"
+
+# Opponent strength. We only ship one bot — the strongest we have — so
+# there is nothing to pick in the UI. The opponent is a time-budgeted MCTS
+# unless BOT_MCTS_ITER pins a fixed iteration count.
+BOT_TIME_BUDGET_S = float(os.environ.get("BOT_TIME_BUDGET_S", "2.0"))
+BOT_MCTS_ITER = int(os.environ.get("BOT_MCTS_ITER", "0"))
+BOT_LABEL = "azul-bot"
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 
 GAMES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "games")
 if not DISABLE_LOG_SAVE:
@@ -94,6 +112,7 @@ def _empty_game():
         "log": [],
         "seed": None,
         "saved_path": None,
+        "logged": False,
         "started_at": None,
         "history": [],
         "last_seen": time.time(),
@@ -136,15 +155,17 @@ def get_game():
 # Game helpers (operate on a passed-in game dict).
 # ---------------------------------------------------------------------------
 
-def make_bot(spec, pid):
-    spec = spec.strip().lower()
-    if spec == "heuristic":
-        return HeuristicPlayer(pid)
-    if spec.startswith("mcts:"):
-        iters = int(spec.split(":", 1)[1])
-        iters = max(1, min(iters, MAX_BOT_MCTS_ITER))
-        return MCTSPlayer(pid, iterations=iters)
-    raise ValueError(f"unknown bot spec {spec!r}")
+def make_best_bot(pid):
+    """The one and only opponent: the strongest bot we have.
+
+    Time-budgeted MCTS by default (more think-time = stronger), or a fixed
+    iteration count if BOT_MCTS_ITER is set for reproducible benchmarking.
+    """
+    if BOT_MCTS_ITER > 0:
+        return MCTSPlayer(pid, iterations=BOT_MCTS_ITER, name=BOT_LABEL)
+    return MCTSPlayer(
+        pid, iterations=None, time_budget_s=BOT_TIME_BUDGET_S, name=BOT_LABEL
+    )
 
 
 def snapshot_for_undo(game):
@@ -158,17 +179,37 @@ def snapshot_for_undo(game):
     })
 
 
+def _post_game_to_supabase(payload):
+    """Best-effort insert into the azul_games table via PostgREST. Runs in a
+    daemon thread so a slow/unavailable network never blocks the response."""
+    url = f"{SUPABASE_URL}/rest/v1/azul_games"
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("apikey", SUPABASE_KEY)
+    req.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Prefer", "return=minimal")
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass  # best-effort; never surface to the player
+
+
+def save_game_supabase(payload):
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    threading.Thread(
+        target=_post_game_to_supabase, args=(payload,), daemon=True
+    ).start()
+
+
 def save_game_log(game, sid):
-    if DISABLE_LOG_SAVE:
-        return None
     sim = game["sim"]
-    if sim is None or not sim.terminal or game["saved_path"]:
+    if sim is None or not sim.terminal or game["logged"]:
         return None
     now = datetime.datetime.now()
     scores = sim.scores()
     winners = [i for i, s in enumerate(scores) if s == max(scores)]
-    fname = f"game_{now.strftime('%Y%m%d_%H%M%S')}_seed{game['seed']}_{sid[:8]}.json"
-    path = os.path.join(GAMES_DIR, fname)
     payload = {
         "schema_version": 1,
         "session_id_prefix": sid[:8],
@@ -188,6 +229,15 @@ def save_game_log(game, sid):
         "move_log": game["log"],
         "coach_history": game["coach_history"],
     }
+    game["logged"] = True
+    # Persist to Supabase regardless of the local-file flag (cloud disks are
+    # ephemeral, so Supabase is the only durable store online).
+    save_game_supabase(payload)
+
+    if DISABLE_LOG_SAVE:
+        return None
+    fname = f"game_{now.strftime('%Y%m%d_%H%M%S')}_seed{game['seed']}_{sid[:8]}.json"
+    path = os.path.join(GAMES_DIR, fname)
     try:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, ensure_ascii=False)
@@ -362,14 +412,15 @@ def index():
 
 @app.route("/new", methods=["POST"])
 def new_game():
-    bots_spec = request.form.get("bots", "heuristic,heuristic,heuristic").strip()
+    try:
+        n_opp = int(request.form.get("opponents", "3"))
+    except ValueError:
+        n_opp = 3
+    n_opp = max(1, min(n_opp, 3))
     seed_str = request.form.get("seed", "").strip()
     seed = int(seed_str) if seed_str else int(time.time())
-    specs = [s.strip() for s in bots_spec.split(",") if s.strip()]
-    if not (1 <= len(specs) <= 3):
-        return "Need 1-3 bot opponents", 400
 
-    n_players = len(specs) + 1
+    n_players = n_opp + 1
     _, game = get_game()
     with game["lock"]:
         import random
@@ -379,15 +430,19 @@ def new_game():
             p.player_trace.StartRound()
         game["sim"] = AzulSim(gs, gs.first_player)
         game["user_seat"] = 0
-        game["bots"] = [make_bot(spec, i + 1) for i, spec in enumerate(specs)]
-        game["bot_specs"] = specs
+        game["bots"] = [make_best_bot(i + 1) for i in range(n_opp)]
+        game["bot_specs"] = [BOT_LABEL] * n_opp
         game["pending"] = None
-        game["message"] = f"New game (seed {seed}) — you are player 0. Opponents: {specs}"
+        game["message"] = (
+            f"New game (seed {seed}) — you are player 0 vs {n_opp} bot"
+            f"{'s' if n_opp > 1 else ''}."
+        )
         game["log"] = []
         game["coach"] = None
         game["coach_history"] = []
         game["seed"] = seed
         game["saved_path"] = None
+        game["logged"] = False
         game["history"] = []
         game["started_at"] = datetime.datetime.now().isoformat(timespec="seconds")
         advance_bots(game)
@@ -491,6 +546,7 @@ def undo():
         game["pending"] = None
         game["coach"] = None
         game["saved_path"] = None
+        game["logged"] = False
         remaining = len(game["history"])
         game["message"] = (f"Undo. {remaining} earlier undo(s) available."
                            if remaining else "Undo. Back at game start.")

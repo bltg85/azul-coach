@@ -17,7 +17,12 @@
     <div class="card">
         <form method="post" action="{{ url_for('new_game') }}" class="controls">
             <label><strong>Opponents:</strong></label>
-            <input type="text" name="bots" value="{{ game.bot_specs|join(',') if game.bot_specs else 'heuristic,heuristic,heuristic' }}" size="40">
+            {% set cur_opp = game.bot_specs|length if game.bot_specs else 3 %}
+            <select name="opponents">
+                <option value="1" {% if cur_opp == 1 %}selected{% endif %}>1 bot</option>
+                <option value="2" {% if cur_opp == 2 %}selected{% endif %}>2 bots</option>
+                <option value="3" {% if cur_opp == 3 %}selected{% endif %}>3 bots</option>
+            </select>
             <label><strong>Seed:</strong></label>
             <input type="number" name="seed" placeholder="random" size="10" title="Same seed = same factory shuffle and first player">
             <button type="submit" class="primary">New game</button>
@@ -35,8 +40,8 @@
             </form>
         {% endif %}
         <div style="font-size:11px;color:var(--muted);margin-top:6px;">
-            Bot specs: <code>heuristic</code>, <code>mcts:300</code>, <code>mcts:1000</code>, <code>mcts:2000</code>.
-            Same seed = same tile shuffle &amp; starting player (heuristic bots play deterministically; MCTS adds its own randomness).
+            Opponents are always the strongest bot we have. Same seed = same tile
+            shuffle &amp; starting player (the bot adds its own search randomness).
         </div>
     </div>
 
@@ -54,7 +59,7 @@
                     {% endfor %}
                 </div>
                 <form method="post" action="{{ url_for('new_game') }}" style="margin-top:16px">
-                    <input type="hidden" name="bots" value="{{ game.bot_specs|join(',') }}">
+                    <input type="hidden" name="opponents" value="{{ game.bot_specs|length }}">
                     <input type="hidden" name="seed" value="{{ game.seed }}">
                     <button type="submit" class="primary">↻ Replay this seed</button>
                     <a href="{{ url_for('index') }}" style="margin-left:12px;color:white;opacity:0.7">(or change setup above)</a>
