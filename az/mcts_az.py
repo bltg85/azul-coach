@@ -24,6 +24,22 @@ def _normalise_scores(scores):
     return np.asarray([s / m for s in scores], dtype=np.float32)
 
 
+def placement_values(scores):
+    """Rank-based outcome in [0,1]: 1st=1.0 ... last=0.0, ties share the
+    average. Unlike score/max this always discriminates between players even
+    when everyone scores low — which is what stops the value head collapsing
+    to a constant during weak self-play."""
+    n = len(scores)
+    v = np.zeros(n, dtype=np.float32)
+    if n <= 1:
+        return v + 1.0
+    for i in range(n):
+        beat = sum(1 for j in range(n) if scores[i] > scores[j])
+        tie = sum(1 for j in range(n) if j != i and scores[i] == scores[j])
+        v[i] = (beat + 0.5 * tie) / (n - 1)
+    return v
+
+
 def _masked_softmax(logits, legal_idxs):
     z = np.full(ACTION_SIZE, -np.inf, dtype=np.float32)
     z[legal_idxs] = logits[legal_idxs]
@@ -60,7 +76,7 @@ def _expand_and_eval(node, evaluator):
     legal = node.sim.legal_moves()
     if not legal:
         node.terminal = True
-        node.value_vec = _normalise_scores(node.sim.scores())
+        node.value_vec = placement_values(node.sim.scores())
         return node.value_vec
     mask, idx_to_move = legal_mask(legal)
     legal_idxs = np.flatnonzero(mask)
@@ -96,7 +112,7 @@ def _select(node, c_puct):
 def _simulate(node, evaluator, c_puct):
     if node.terminal:
         if node.value_vec is None:
-            node.value_vec = _normalise_scores(node.sim.scores())
+            node.value_vec = placement_values(node.sim.scores())
         return node.value_vec
     if not node.expanded:
         return _expand_and_eval(node, evaluator)
