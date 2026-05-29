@@ -73,6 +73,47 @@ def play_game(evaluator, n_sims, c_puct=1.5, rng=None):
     return X, P, V, sim.scores()
 
 
+# ---------------------------------------------------------------------------
+# Parallel self-play (multiprocessing). Workers must be module-level so they
+# pickle under Windows' spawn start method.
+# ---------------------------------------------------------------------------
+
+_WORKER = {}
+
+
+def _init_worker(weights_path, net_seed, sims, c_puct):
+    net = NumpyNet.load(weights_path) if weights_path else random_numpynet(net_seed)
+    _WORKER["net"] = net
+    _WORKER["sims"] = sims
+    _WORKER["c_puct"] = c_puct
+
+
+def _play_one(game_seed):
+    rng = np.random.default_rng(game_seed)
+    return play_game(_WORKER["net"].forward, _WORKER["sims"], _WORKER["c_puct"], rng)
+
+
+def generate_parallel(weights, sims, c_puct, games, seed, workers):
+    """Play `games` self-play games across `workers` processes. Returns
+    concatenated (X, P, V) plus a list of final scores."""
+    from multiprocessing import Pool
+
+    seeds = [seed * 100003 + i for i in range(games)]
+    Xs, Ps, Vs, all_scores = [], [], [], []
+    t0 = time.time()
+    with Pool(workers, initializer=_init_worker,
+              initargs=(weights, seed, sims, c_puct)) as pool:
+        done = 0
+        for X, P, V, scores in pool.imap_unordered(_play_one, seeds):
+            Xs.append(X); Ps.append(P); Vs.append(V); all_scores.append(scores)
+            done += 1
+            if done % 5 == 0 or done == games:
+                n = sum(len(x) for x in Xs)
+                print(f"  {done}/{games} games  samples={n}  "
+                      f"({time.time()-t0:.0f}s)", flush=True)
+    return (np.concatenate(Xs), np.concatenate(Ps), np.concatenate(Vs), all_scores)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--games", type=int, default=20)
@@ -81,24 +122,27 @@ def main():
     ap.add_argument("--weights", default=None, help="NumpyNet .npz; random if omitted")
     ap.add_argument("--out", required=True)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--workers", type=int, default=1,
+                    help="parallel self-play processes (1 = sequential)")
     args = ap.parse_args()
 
-    net = NumpyNet.load(args.weights) if args.weights else random_numpynet(seed=args.seed)
-    evaluator = net.forward
-    rng = np.random.default_rng(args.seed)
-    random.seed(args.seed)
-
-    Xs, Ps, Vs = [], [], []
     t0 = time.time()
-    for g in range(args.games):
-        X, P, V, scores = play_game(evaluator, args.sims, args.c_puct, rng)
-        Xs.append(X); Ps.append(P); Vs.append(V)
-        if (g + 1) % 5 == 0 or args.games <= 10:
-            el = time.time() - t0
-            print(f"  game {g+1}/{args.games}  samples={sum(len(x) for x in Xs)}  "
-                  f"({el:.0f}s)  last scores={scores}", flush=True)
+    if args.workers > 1:
+        X, P, V, _ = generate_parallel(
+            args.weights, args.sims, args.c_puct, args.games, args.seed, args.workers)
+    else:
+        net = NumpyNet.load(args.weights) if args.weights else random_numpynet(seed=args.seed)
+        rng = np.random.default_rng(args.seed)
+        random.seed(args.seed)
+        Xs, Ps, Vs = [], [], []
+        for g in range(args.games):
+            X, P, V, scores = play_game(net.forward, args.sims, args.c_puct, rng)
+            Xs.append(X); Ps.append(P); Vs.append(V)
+            if (g + 1) % 5 == 0 or args.games <= 10:
+                print(f"  game {g+1}/{args.games}  samples={sum(len(x) for x in Xs)}  "
+                      f"({time.time()-t0:.0f}s)  last scores={scores}", flush=True)
+        X = np.concatenate(Xs); P = np.concatenate(Ps); V = np.concatenate(Vs)
 
-    X = np.concatenate(Xs); P = np.concatenate(Ps); V = np.concatenate(Vs)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     np.savez_compressed(args.out, X=X, P=P, V=V)
     print(f"Saved {len(X)} samples to {args.out} "
