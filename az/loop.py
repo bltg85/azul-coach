@@ -27,6 +27,7 @@ def main():
     ap.add_argument("--sims", type=int, default=120, help="MCTS sims per move")
     ap.add_argument("--epochs", type=int, default=15)
     ap.add_argument("--buffer", type=int, default=3, help="recent iters to train on")
+    ap.add_argument("--workers", type=int, default=1, help="parallel self-play processes")
     ap.add_argument("--out-dir", default="runs/loop")
     ap.add_argument("--init", default=None, help="warm-start weights for iter 0")
     args = ap.parse_args()
@@ -47,7 +48,8 @@ def main():
             print(f"  (self-play data {data_path} exists — skipping)")
         else:
             cmd = [py, "-m", "az.selfplay_az", "--games", str(args.games),
-                   "--sims", str(args.sims), "--seed", str(i), "--out", data_path]
+                   "--sims", str(args.sims), "--seed", str(i), "--out", data_path,
+                   "--workers", str(args.workers)]
             if prev:
                 cmd += ["--weights", prev]
             _run(cmd)
