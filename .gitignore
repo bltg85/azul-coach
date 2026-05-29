@@ -12,3 +12,8 @@ bench_suite.log
 venv/
 .env
 .DS_Store
+
+# AlphaZero training artifacts (self-play data + exported weights)
+data/
+runs/
+*.npz
