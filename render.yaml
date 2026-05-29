@@ -10,9 +10,14 @@ services:
         generateValue: true
       - key: MAX_COACH_ITER
         value: "400"
-      - key: MAX_BOT_MCTS_ITER
-        value: "400"
+      - key: BOT_TIME_BUDGET_S
+        value: "2.0"
       - key: DISABLE_LOG_SAVE
         value: "1"
+      # Set these in the Render dashboard (service-role key — never commit).
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
       - key: PYTHON_VERSION
         value: "3.12.3"
