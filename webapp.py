@@ -395,6 +395,9 @@ def build_view(game):
         "coach_busy": game["coach_busy"],
         "undo_count": len(game["history"]),
         "max_coach_iter": MAX_COACH_ITER,
+        "saved_cloud": game["logged"] and bool(SUPABASE_URL and SUPABASE_KEY),
+        "saved_file": (os.path.basename(game["saved_path"])
+                       if game["saved_path"] else None),
     }
 
 
@@ -520,7 +523,9 @@ def place():
         advance_bots(game)
         if sim.terminal:
             saved = save_game_log(game, sid)
-            if saved:
+            if SUPABASE_URL and SUPABASE_KEY:
+                game["message"] = "Game over — match saved to the cloud."
+            elif saved:
                 game["message"] = f"Game over. Log saved to {os.path.basename(saved)}"
             else:
                 game["message"] = "Game over."

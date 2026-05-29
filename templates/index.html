@@ -65,8 +65,14 @@
                     <a href="{{ url_for('index') }}" style="margin-left:12px;color:white;opacity:0.7">(or change setup above)</a>
                 </form>
                 <div style="margin-top:8px;font-size:11px;opacity:0.7">
-                    Seed: {{ game.seed }} · Saved to:
-                    games/{{ (game.saved_path.replace('\\', '/').split('/') | last) if game.saved_path else '(not saved)' }}
+                    Seed: {{ game.seed }} ·
+                    {% if view.saved_cloud %}
+                        ☁ Saved to the cloud
+                    {% elif view.saved_file %}
+                        Saved to games/{{ view.saved_file }}
+                    {% else %}
+                        (not saved)
+                    {% endif %}
                 </div>
             </div>
         {% endif %}
