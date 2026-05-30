@@ -55,10 +55,9 @@ def eval_strength(run_dir, baseline, games, sims, seed=20000):
     from az.player import AZPlayer
     from az.evaluate import make_baseline
 
-    paths = sorted(
-        glob.glob(os.path.join(run_dir, "az*.npz")),
-        key=lambda p: int(re.search(r"az(\d+)\.npz", p).group(1)),
-    )
+    paths = [p for p in glob.glob(os.path.join(run_dir, "az*.npz"))
+             if re.search(r"az(\d+)\.npz", os.path.basename(p))]
+    paths.sort(key=lambda p: int(re.search(r"az(\d+)\.npz", os.path.basename(p)).group(1)))
     iters, winrates, avgscores = [], [], []
     for p in paths:
         it = int(re.search(r"az(\d+)\.npz", p).group(1))
