@@ -49,6 +49,16 @@ from utils import Move, MoveToString, Tile  # noqa: E402
 from agents.mcts import MCTSPlayer  # noqa: E402
 from agents.sim import AzulSim  # noqa: E402
 
+# AlphaZero net (optional). Imports numpy only; torch is never needed to
+# serve. If the weights file is present we use it as the opponent in
+# 4-player games (the net is trained for 4 players / 9 factories).
+try:
+    from az.net import NumpyNet  # noqa: E402
+    from az.player import AZPlayer  # noqa: E402
+    _AZ_IMPORTED = True
+except Exception:
+    _AZ_IMPORTED = False
+
 
 # ---------------------------------------------------------------------------
 # Config.
@@ -63,11 +73,24 @@ SESSION_TTL_S = int(os.environ.get("SESSION_TTL_S", "3600"))
 DISABLE_LOG_SAVE = os.environ.get("DISABLE_LOG_SAVE", "0") == "1"
 
 # Opponent strength. We only ship one bot — the strongest we have — so
-# there is nothing to pick in the UI. The opponent is a time-budgeted MCTS
-# unless BOT_MCTS_ITER pins a fixed iteration count.
+# there is nothing to pick in the UI. Preference order:
+#   1. the AlphaZero net (AZ_WEIGHTS), in 4-player games only
+#   2. otherwise a time-budgeted MCTS (or fixed BOT_MCTS_ITER)
 BOT_TIME_BUDGET_S = float(os.environ.get("BOT_TIME_BUDGET_S", "2.0"))
 BOT_MCTS_ITER = int(os.environ.get("BOT_MCTS_ITER", "0"))
 BOT_LABEL = "azul-bot"
+
+AZ_WEIGHTS = os.environ.get(
+    "AZ_WEIGHTS",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "az", "weights", "az_v1.npz"),
+)
+AZ_SIMS = int(os.environ.get("AZ_SIMS", "80"))
+AZ_NET = None
+if _AZ_IMPORTED and os.path.exists(AZ_WEIGHTS):
+    try:
+        AZ_NET = NumpyNet.load(AZ_WEIGHTS)
+    except Exception:
+        AZ_NET = None
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
@@ -155,12 +178,15 @@ def get_game():
 # Game helpers (operate on a passed-in game dict).
 # ---------------------------------------------------------------------------
 
-def make_best_bot(pid):
+def make_best_bot(pid, n_players):
     """The one and only opponent: the strongest bot we have.
 
-    Time-budgeted MCTS by default (more think-time = stronger), or a fixed
-    iteration count if BOT_MCTS_ITER is set for reproducible benchmarking.
+    The AlphaZero net (if loaded) is used in 4-player games — it's trained
+    for that format. Otherwise fall back to a time-budgeted MCTS (or a fixed
+    iteration count if BOT_MCTS_ITER is set).
     """
+    if AZ_NET is not None and n_players == 4:
+        return AZPlayer(pid, AZ_NET, n_sims=AZ_SIMS, name=BOT_LABEL)
     if BOT_MCTS_ITER > 0:
         return MCTSPlayer(pid, iterations=BOT_MCTS_ITER, name=BOT_LABEL)
     return MCTSPlayer(
@@ -433,7 +459,7 @@ def new_game():
             p.player_trace.StartRound()
         game["sim"] = AzulSim(gs, gs.first_player)
         game["user_seat"] = 0
-        game["bots"] = [make_best_bot(i + 1) for i in range(n_opp)]
+        game["bots"] = [make_best_bot(i + 1, n_players) for i in range(n_opp)]
         game["bot_specs"] = [BOT_LABEL] * n_opp
         game["pending"] = None
         game["message"] = (
