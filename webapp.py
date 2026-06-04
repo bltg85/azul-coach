@@ -639,6 +639,10 @@ def healthz():
         # game logging is wired. Never exposes the key itself.
         "supabase_configured": bool(SUPABASE_URL and SUPABASE_KEY),
         "bot_time_budget_s": BOT_TIME_BUDGET_S,
+        # AZ bot status — confirms the net loaded on the deploy (vs falling
+        # back to MCTS, e.g. if an LFS weights file didn't resolve to content)
+        "az_bot": AZ_NET is not None,
+        "az_sims": AZ_SIMS,
     }
 
 
