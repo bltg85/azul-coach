@@ -17,3 +17,5 @@ venv/
 data/
 runs/
 *.npz
+# ...except the weights actually shipped for serving
+!az/weights/*.npz
