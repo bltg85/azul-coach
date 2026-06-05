@@ -20,12 +20,24 @@ from az.net import NumpyNet  # noqa: E402
 from az.player import AZPlayer  # noqa: E402
 
 
+_AZ_BASELINE_CACHE = {}
+
+
 def make_baseline(spec, pid):
-    spec = spec.strip().lower()
-    if spec == "heuristic":
+    spec = spec.strip()
+    low = spec.lower()
+    if low == "heuristic":
         return HeuristicPlayer(pid)
-    if spec.startswith("mcts:"):
+    if low.startswith("mcts:"):
         return MCTSPlayer(pid, iterations=int(spec.split(":", 1)[1]))
+    if low.startswith("az:"):
+        # az:<weights_path>[:sims] — opponents are a trained net (default 80 sims)
+        parts = spec.split(":")
+        path = parts[1]
+        sims = int(parts[2]) if len(parts) > 2 else 80
+        if path not in _AZ_BASELINE_CACHE:
+            _AZ_BASELINE_CACHE[path] = NumpyNet.load(path)
+        return AZPlayer(pid, _AZ_BASELINE_CACHE[path], n_sims=sims)
     raise SystemExit(f"unknown baseline {spec!r}")
 
 
