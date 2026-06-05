@@ -78,7 +78,7 @@ DISABLE_LOG_SAVE = os.environ.get("DISABLE_LOG_SAVE", "0") == "1"
 #   2. otherwise a time-budgeted MCTS (or fixed BOT_MCTS_ITER)
 BOT_TIME_BUDGET_S = float(os.environ.get("BOT_TIME_BUDGET_S", "2.0"))
 BOT_MCTS_ITER = int(os.environ.get("BOT_MCTS_ITER", "0"))
-BOT_LABEL = "azul-bot"
+BOT_LABEL = "Cobalt"
 
 AZ_WEIGHTS = os.environ.get(
     "AZ_WEIGHTS",
@@ -289,11 +289,19 @@ def advance_bots(game):
         moves_copy = deepcopy(moves)
         chosen = bot.SelectMove(moves_copy, gs_copy)
         game["log"].append(
-            f"P{seat} ({bot.__class__.__name__}): "
+            f"{_bot_name(seat)}: "
             + MoveToString(seat, chosen).replace("\n", " | ")
         )
         sim.apply(chosen)
         game["coach"] = None
+
+
+_BOT_ROMAN = {1: "", 2: " II", 3: " III"}
+
+
+def _bot_name(seat):
+    """Opponent display name. Seats 1..3 -> Cobalt, Cobalt II, Cobalt III."""
+    return BOT_LABEL + _BOT_ROMAN.get(seat, f" {seat}")
 
 
 def build_view(game):
@@ -359,7 +367,7 @@ def build_view(game):
             "floor": floor,
             "is_user": p.id == game["user_seat"],
             "is_current": p.id == sim.cur and not sim.terminal,
-            "name": "YOU" if p.id == game["user_seat"] else f"Bot {p.id}",
+            "name": "YOU" if p.id == game["user_seat"] else _bot_name(p.id),
         })
 
     destinations = []
@@ -463,8 +471,7 @@ def new_game():
         game["bot_specs"] = [BOT_LABEL] * n_opp
         game["pending"] = None
         game["message"] = (
-            f"New game (seed {seed}) — you are player 0 vs {n_opp} bot"
-            f"{'s' if n_opp > 1 else ''}."
+            f"New game (seed {seed}) — you vs {n_opp}× {BOT_LABEL}."
         )
         game["log"] = []
         game["coach"] = None
