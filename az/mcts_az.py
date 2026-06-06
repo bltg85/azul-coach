@@ -72,7 +72,7 @@ class _Node:
         self.children = None   # dict action_idx -> _Node
 
 
-def _expand_and_eval(node, evaluator):
+def _expand_and_eval(node, evaluator, encode_fn):
     legal = node.sim.legal_moves()
     if not legal:
         node.terminal = True
@@ -80,7 +80,7 @@ def _expand_and_eval(node, evaluator):
         return node.value_vec
     mask, idx_to_move = legal_mask(legal)
     legal_idxs = np.flatnonzero(mask)
-    feats = encode(node.sim.gs, node.to_move)
+    feats = encode_fn(node.sim.gs, node.to_move)
     logits, value_canon = evaluator(feats)
     priors = _masked_softmax(np.asarray(logits, dtype=np.float32), legal_idxs)
     n = len(node.sim.gs.players)
@@ -109,13 +109,13 @@ def _select(node, c_puct):
     return legal[int(np.argmax(q + u))]
 
 
-def _simulate(node, evaluator, c_puct):
+def _simulate(node, evaluator, c_puct, encode_fn):
     if node.terminal:
         if node.value_vec is None:
             node.value_vec = placement_values(node.sim.scores())
         return node.value_vec
     if not node.expanded:
-        return _expand_and_eval(node, evaluator)
+        return _expand_and_eval(node, evaluator, encode_fn)
     a = _select(node, c_puct)
     child = node.children.get(a)
     if child is None:
@@ -123,26 +123,29 @@ def _simulate(node, evaluator, c_puct):
         child_sim.apply(node.idx_to_move[a])
         child = _Node(child_sim)
         node.children[a] = child
-    v = _simulate(child, evaluator, c_puct)
+    v = _simulate(child, evaluator, c_puct, encode_fn)
     node.N[a] += 1
     node.W[a] += v
     return v
 
 
 def az_search(sim, evaluator, n_sims=200, c_puct=1.5,
-              dirichlet_alpha=None, dirichlet_frac=0.25):
+              dirichlet_alpha=None, dirichlet_frac=0.25, encode_fn=None):
     """Run PUCT and return (root, visit_counts ACTION_SIZE).
 
     dirichlet_alpha: if set, add Dirichlet noise to the root priors (used in
     self-play for exploration). Typical alpha ~0.3, frac 0.25.
+    encode_fn: state encoder to use (defaults to the current az.encoder.encode);
+    pass a different version to evaluate an old net with its own encoder.
     """
+    enc = encode_fn or encode
     root = _Node(sim.clone())
-    _expand_and_eval(root, evaluator)
+    _expand_and_eval(root, evaluator, enc)
     if dirichlet_alpha is not None and len(root.legal) > 0:
         noise = np.random.default_rng().dirichlet([dirichlet_alpha] * len(root.legal))
         root.P[root.legal] = (1 - dirichlet_frac) * root.P[root.legal] + dirichlet_frac * noise
     for _ in range(n_sims):
-        _simulate(root, evaluator, c_puct)
+        _simulate(root, evaluator, c_puct, enc)
     return root, root.N.copy()
 
 
