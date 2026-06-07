@@ -21,6 +21,8 @@ def _run(cmd):
 
 
 def main():
+    from az.keepawake import keep_awake
+    keep_awake()  # don't let Windows idle-sleep mid-campaign
     ap = argparse.ArgumentParser()
     ap.add_argument("--iters", type=int, default=10)
     ap.add_argument("--games", type=int, default=60, help="self-play games per iter")
