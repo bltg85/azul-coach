@@ -19,9 +19,9 @@
             <label><strong>Opponents:</strong></label>
             {% set cur_opp = game.bot_specs|length if game.bot_specs else 3 %}
             <select name="opponents">
-                <option value="1" {% if cur_opp == 1 %}selected{% endif %}>1× Cobalt</option>
-                <option value="2" {% if cur_opp == 2 %}selected{% endif %}>2× Cobalt</option>
-                <option value="3" {% if cur_opp == 3 %}selected{% endif %}>3× Cobalt</option>
+                <option value="1" {% if cur_opp == 1 %}selected{% endif %}>1× Aragon</option>
+                <option value="2" {% if cur_opp == 2 %}selected{% endif %}>2× Aragon</option>
+                <option value="3" {% if cur_opp == 3 %}selected{% endif %}>3× Aragon</option>
             </select>
             <label><strong>Seed:</strong></label>
             <input type="number" name="seed" placeholder="random" size="10" title="Same seed = same factory shuffle and first player">
@@ -40,8 +40,8 @@
             </form>
         {% endif %}
         <div style="font-size:11px;color:var(--muted);margin-top:6px;">
-            Cobalt is our strongest bot — a self-taught AlphaZero-style net (4-player
-            games). Same seed = same tile shuffle &amp; starting player; Cobalt adds
+            Aragon is our strongest bot — a self-taught AlphaZero-style net (4-player
+            games). Same seed = same tile shuffle &amp; starting player; Aragon adds
             its own search randomness.
         </div>
     </div>

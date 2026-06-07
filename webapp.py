@@ -78,7 +78,7 @@ DISABLE_LOG_SAVE = os.environ.get("DISABLE_LOG_SAVE", "0") == "1"
 #   2. otherwise a time-budgeted MCTS (or fixed BOT_MCTS_ITER)
 BOT_TIME_BUDGET_S = float(os.environ.get("BOT_TIME_BUDGET_S", "2.0"))
 BOT_MCTS_ITER = int(os.environ.get("BOT_MCTS_ITER", "0"))
-BOT_LABEL = "Cobalt"
+BOT_LABEL = "Aragon"
 
 AZ_WEIGHTS = os.environ.get(
     "AZ_WEIGHTS",
@@ -301,7 +301,7 @@ _BOT_ROMAN = {1: "", 2: " II", 3: " III"}
 
 
 def _bot_name(seat):
-    """Opponent display name. Seats 1..3 -> Cobalt, Cobalt II, Cobalt III."""
+    """Opponent display name. Seats 1..3 -> Aragon, Aragon II, Aragon III."""
     return BOT_LABEL + _BOT_ROMAN.get(seat, f" {seat}")
 
 
