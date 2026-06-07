@@ -15,9 +15,18 @@ import sys
 import time
 
 
-def _run(cmd):
+def _run(cmd, retries=2):
+    """Run a step, retrying on failure (transient CUDA/GPU crashes on Windows
+    — e.g. exit 0xC0000409 — are common in long torch runs and usually pass
+    on a retry)."""
     print("  $", " ".join(str(c) for c in cmd), flush=True)
-    subprocess.run(cmd, check=True)
+    for attempt in range(retries + 1):
+        r = subprocess.run(cmd)
+        if r.returncode == 0:
+            return
+        print(f"  ! step failed (exit {r.returncode}), "
+              f"attempt {attempt + 1}/{retries + 1}", flush=True)
+    raise RuntimeError(f"step failed after {retries + 1} attempts: {cmd}")
 
 
 def main():
