@@ -31,6 +31,8 @@ def main():
     ap.add_argument("--buffer", type=int, default=3, help="recent iters to train on")
     ap.add_argument("--workers", type=int, default=1, help="parallel self-play processes")
     ap.add_argument("--entropy", type=float, default=0.0, help="policy entropy bonus")
+    ap.add_argument("--algo", default="gumbel", choices=["gumbel", "puct"],
+                    help="self-play search algorithm")
     ap.add_argument("--anchor", default=None,
                     help="dataset always mixed into training (e.g. bootstrap data) "
                          "so the net doesn't forget heuristic-level play")
@@ -55,7 +57,7 @@ def main():
         else:
             cmd = [py, "-m", "az.selfplay_az", "--games", str(args.games),
                    "--sims", str(args.sims), "--seed", str(i), "--out", data_path,
-                   "--workers", str(args.workers)]
+                   "--workers", str(args.workers), "--algo", args.algo]
             if prev:
                 cmd += ["--weights", prev]
             _run(cmd)

@@ -20,7 +20,7 @@ from az import NUM_PLAYERS
 from az.actions import ACTION_SIZE
 from az.encoder import FEATURE_SIZE
 
-HIDDEN = (512, 512, 512)
+HIDDEN = (256, 256)
 
 
 # ---------------------------------------------------------------------------

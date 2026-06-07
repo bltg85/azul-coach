@@ -53,6 +53,8 @@ def main():
     ap.add_argument("--baseline", default="heuristic")
     ap.add_argument("--games", type=int, default=40)
     ap.add_argument("--seed", type=int, default=10000)
+    ap.add_argument("--algo", default="puct", choices=["puct", "gumbel"],
+                    help="search for the subject net (use gumbel for v2/gumbel nets)")
     args = ap.parse_args()
 
     net = NumpyNet.load(args.weights)
@@ -64,7 +66,7 @@ def main():
         players = []
         for i in range(4):
             if i == az_seat:
-                players.append(AZPlayer(i, net, n_sims=args.sims))
+                players.append(AZPlayer(i, net, n_sims=args.sims, algo=args.algo))
             else:
                 players.append(make_baseline(args.baseline, i))
         activity = GameRunner(players, args.seed + g).Run(False)

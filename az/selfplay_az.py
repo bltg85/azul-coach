@@ -21,9 +21,10 @@ import _framework_path  # noqa: F401
 from model import GameState  # noqa: E402
 
 from az import NUM_PLAYERS  # noqa: E402
-from az.actions import ACTION_SIZE  # noqa: E402
+from az.actions import ACTION_SIZE, legal_mask  # noqa: E402
 from az.encoder import FEATURE_SIZE  # noqa: E402
 from az.encoder import encode  # noqa: E402
+from az.gumbel import gumbel_search  # noqa: E402
 from az.mcts_az import az_search, policy_from_visits, placement_values  # noqa: E402
 from az.net import NumpyNet, random_numpynet  # noqa: E402
 from agents.sim import AzulSim  # noqa: E402
@@ -35,7 +36,7 @@ TEMP_MOVES = 20
 DIRICHLET_ALPHA = 0.3
 
 
-def play_game(evaluator, n_sims, c_puct=1.5, rng=None):
+def play_game(evaluator, n_sims, c_puct=1.5, rng=None, algo="gumbel"):
     rng = rng or np.random.default_rng()
     gs = GameState(NUM_PLAYERS)
     for p in gs.players:
@@ -45,21 +46,31 @@ def play_game(evaluator, n_sims, c_puct=1.5, rng=None):
     feats_log, pi_log, seat_log = [], [], []
     ply = 0
     while not sim.terminal and ply < 400:
-        root, visits = az_search(
-            sim, evaluator, n_sims=n_sims, c_puct=c_puct,
-            dirichlet_alpha=DIRICHLET_ALPHA,
-        )
-        if visits.sum() == 0:
-            break
-        pi_target = policy_from_visits(visits, temperature=1.0)
-        feats_log.append(encode(sim.gs, sim.cur))
-        pi_log.append(pi_target.astype(np.float32))
-        seat_log.append(sim.cur)
-        # pick the move to actually play
-        temp = 1.0 if ply < TEMP_MOVES else 0.0
-        pick_dist = policy_from_visits(visits, temperature=temp)
-        a = int(rng.choice(ACTION_SIZE, p=pick_dist)) if temp > 0 else int(np.argmax(pick_dist))
-        sim.apply(root.idx_to_move[a])
+        if algo == "gumbel":
+            # Gumbel: improved-policy target, noise IS the exploration
+            a, target, _ = gumbel_search(sim, evaluator, n_sims=n_sims,
+                                         rng=rng, add_noise=True)
+            if a is None:
+                break
+            feats_log.append(encode(sim.gs, sim.cur))
+            pi_log.append(target)
+            seat_log.append(sim.cur)
+            _, idx2move = legal_mask(sim.legal_moves())
+            sim.apply(idx2move[a])
+        else:  # puct
+            root, visits = az_search(
+                sim, evaluator, n_sims=n_sims, c_puct=c_puct,
+                dirichlet_alpha=DIRICHLET_ALPHA,
+            )
+            if visits.sum() == 0:
+                break
+            feats_log.append(encode(sim.gs, sim.cur))
+            pi_log.append(policy_from_visits(visits, temperature=1.0).astype(np.float32))
+            seat_log.append(sim.cur)
+            temp = 1.0 if ply < TEMP_MOVES else 0.0
+            pick_dist = policy_from_visits(visits, temperature=temp)
+            a = int(rng.choice(ACTION_SIZE, p=pick_dist)) if temp > 0 else int(np.argmax(pick_dist))
+            sim.apply(root.idx_to_move[a])
         ply += 1
 
     n = len(sim.gs.players)
@@ -81,19 +92,21 @@ def play_game(evaluator, n_sims, c_puct=1.5, rng=None):
 _WORKER = {}
 
 
-def _init_worker(weights_path, net_seed, sims, c_puct):
+def _init_worker(weights_path, net_seed, sims, c_puct, algo):
     net = NumpyNet.load(weights_path) if weights_path else random_numpynet(net_seed)
     _WORKER["net"] = net
     _WORKER["sims"] = sims
     _WORKER["c_puct"] = c_puct
+    _WORKER["algo"] = algo
 
 
 def _play_one(game_seed):
     rng = np.random.default_rng(game_seed)
-    return play_game(_WORKER["net"].forward, _WORKER["sims"], _WORKER["c_puct"], rng)
+    return play_game(_WORKER["net"].forward, _WORKER["sims"], _WORKER["c_puct"],
+                     rng, algo=_WORKER["algo"])
 
 
-def generate_parallel(weights, sims, c_puct, games, seed, workers):
+def generate_parallel(weights, sims, c_puct, games, seed, workers, algo="gumbel"):
     """Play `games` self-play games across `workers` processes. Returns
     concatenated (X, P, V) plus a list of final scores."""
     from multiprocessing import Pool
@@ -102,7 +115,7 @@ def generate_parallel(weights, sims, c_puct, games, seed, workers):
     Xs, Ps, Vs, all_scores = [], [], [], []
     t0 = time.time()
     with Pool(workers, initializer=_init_worker,
-              initargs=(weights, seed, sims, c_puct)) as pool:
+              initargs=(weights, seed, sims, c_puct, algo)) as pool:
         done = 0
         for X, P, V, scores in pool.imap_unordered(_play_one, seeds):
             Xs.append(X); Ps.append(P); Vs.append(V); all_scores.append(scores)
@@ -124,19 +137,22 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--workers", type=int, default=1,
                     help="parallel self-play processes (1 = sequential)")
+    ap.add_argument("--algo", default="gumbel", choices=["gumbel", "puct"],
+                    help="search algorithm for self-play")
     args = ap.parse_args()
 
     t0 = time.time()
     if args.workers > 1:
         X, P, V, _ = generate_parallel(
-            args.weights, args.sims, args.c_puct, args.games, args.seed, args.workers)
+            args.weights, args.sims, args.c_puct, args.games, args.seed,
+            args.workers, algo=args.algo)
     else:
         net = NumpyNet.load(args.weights) if args.weights else random_numpynet(seed=args.seed)
         rng = np.random.default_rng(args.seed)
         random.seed(args.seed)
         Xs, Ps, Vs = [], [], []
         for g in range(args.games):
-            X, P, V, scores = play_game(net.forward, args.sims, args.c_puct, rng)
+            X, P, V, scores = play_game(net.forward, args.sims, args.c_puct, rng, algo=args.algo)
             Xs.append(X); Ps.append(P); Vs.append(V)
             if (g + 1) % 5 == 0 or args.games <= 10:
                 print(f"  game {g+1}/{args.games}  samples={sum(len(x) for x in Xs)}  "
