@@ -85,6 +85,7 @@ AZ_WEIGHTS = os.environ.get(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "az", "weights", "az_v1.npz"),
 )
 AZ_SIMS = int(os.environ.get("AZ_SIMS", "80"))
+AZ_ALGO = os.environ.get("AZ_ALGO", "gumbel")  # az59 is a Gumbel/v2 net
 AZ_NET = None
 if _AZ_IMPORTED and os.path.exists(AZ_WEIGHTS):
     try:
@@ -186,7 +187,7 @@ def make_best_bot(pid, n_players):
     iteration count if BOT_MCTS_ITER is set).
     """
     if AZ_NET is not None and n_players == 4:
-        return AZPlayer(pid, AZ_NET, n_sims=AZ_SIMS, name=BOT_LABEL)
+        return AZPlayer(pid, AZ_NET, n_sims=AZ_SIMS, name=BOT_LABEL, algo=AZ_ALGO)
     if BOT_MCTS_ITER > 0:
         return MCTSPlayer(pid, iterations=BOT_MCTS_ITER, name=BOT_LABEL)
     return MCTSPlayer(
@@ -650,6 +651,7 @@ def healthz():
         # back to MCTS, e.g. if an LFS weights file didn't resolve to content)
         "az_bot": AZ_NET is not None,
         "az_sims": AZ_SIMS,
+        "az_algo": AZ_ALGO,
     }
 
 
