@@ -30,14 +30,19 @@ def make_baseline(spec, pid):
         return HeuristicPlayer(pid)
     if low.startswith("mcts:"):
         return MCTSPlayer(pid, iterations=int(spec.split(":", 1)[1]))
-    if low.startswith("az:"):
-        # az:<weights_path>[:sims] — opponents are a trained net (default 80 sims)
+    if low.startswith("az:") or low.startswith("azv1:"):
+        # az:<path>[:sims]   -> net with the CURRENT encoder
+        # azv1:<path>[:sims] -> net with the FROZEN v1 encoder (e.g. az20)
+        v1 = low.startswith("azv1:")
         parts = spec.split(":")
         path = parts[1]
         sims = int(parts[2]) if len(parts) > 2 else 80
         if path not in _AZ_BASELINE_CACHE:
             _AZ_BASELINE_CACHE[path] = NumpyNet.load(path)
-        return AZPlayer(pid, _AZ_BASELINE_CACHE[path], n_sims=sims)
+        enc = None
+        if v1:
+            from az.encoder_v1 import encode as enc
+        return AZPlayer(pid, _AZ_BASELINE_CACHE[path], n_sims=sims, encode_fn=enc)
     raise SystemExit(f"unknown baseline {spec!r}")
 
 
@@ -48,6 +53,8 @@ def main():
     ap.add_argument("--baseline", default="heuristic")
     ap.add_argument("--games", type=int, default=40)
     ap.add_argument("--seed", type=int, default=10000)
+    ap.add_argument("--algo", default="puct", choices=["puct", "gumbel"],
+                    help="search for the subject net (use gumbel for v2/gumbel nets)")
     args = ap.parse_args()
 
     net = NumpyNet.load(args.weights)
@@ -59,7 +66,7 @@ def main():
         players = []
         for i in range(4):
             if i == az_seat:
-                players.append(AZPlayer(i, net, n_sims=args.sims))
+                players.append(AZPlayer(i, net, n_sims=args.sims, algo=args.algo))
             else:
                 players.append(make_baseline(args.baseline, i))
         activity = GameRunner(players, args.seed + g).Run(False)

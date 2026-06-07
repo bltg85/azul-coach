@@ -15,12 +15,23 @@ import sys
 import time
 
 
-def _run(cmd):
+def _run(cmd, retries=2):
+    """Run a step, retrying on failure (transient CUDA/GPU crashes on Windows
+    — e.g. exit 0xC0000409 — are common in long torch runs and usually pass
+    on a retry)."""
     print("  $", " ".join(str(c) for c in cmd), flush=True)
-    subprocess.run(cmd, check=True)
+    for attempt in range(retries + 1):
+        r = subprocess.run(cmd)
+        if r.returncode == 0:
+            return
+        print(f"  ! step failed (exit {r.returncode}), "
+              f"attempt {attempt + 1}/{retries + 1}", flush=True)
+    raise RuntimeError(f"step failed after {retries + 1} attempts: {cmd}")
 
 
 def main():
+    from az.keepawake import keep_awake
+    keep_awake()  # don't let Windows idle-sleep mid-campaign
     ap = argparse.ArgumentParser()
     ap.add_argument("--iters", type=int, default=10)
     ap.add_argument("--games", type=int, default=60, help="self-play games per iter")
@@ -29,6 +40,8 @@ def main():
     ap.add_argument("--buffer", type=int, default=3, help="recent iters to train on")
     ap.add_argument("--workers", type=int, default=1, help="parallel self-play processes")
     ap.add_argument("--entropy", type=float, default=0.0, help="policy entropy bonus")
+    ap.add_argument("--algo", default="gumbel", choices=["gumbel", "puct"],
+                    help="self-play search algorithm")
     ap.add_argument("--anchor", default=None,
                     help="dataset always mixed into training (e.g. bootstrap data) "
                          "so the net doesn't forget heuristic-level play")
@@ -53,7 +66,7 @@ def main():
         else:
             cmd = [py, "-m", "az.selfplay_az", "--games", str(args.games),
                    "--sims", str(args.sims), "--seed", str(i), "--out", data_path,
-                   "--workers", str(args.workers)]
+                   "--workers", str(args.workers), "--algo", args.algo]
             if prev:
                 cmd += ["--weights", prev]
             _run(cmd)
