@@ -36,6 +36,17 @@ class EqualTimeTests(unittest.TestCase):
         self.assertEqual(selected[0], selected[1])
         self.assertEqual(before, (public_key(sim), gs.bag, gs.rng.getstate(), random.getstate()))
 
+    def test_non_power_of_two_candidates_use_full_budget(self):
+        gs = GameState(4, rng=random.Random(42))
+        moves = gs.players[gs.first_player].GetAvailableMoves(gs)
+        for candidates in (3, 5, 7, 16):
+            bot = TimedAZPlayer(gs.first_player, self.net, .05, seed=7)
+            with patch("az.timed_player.MAX_CONSIDERED", candidates), patch(
+                    "az.timed_player.time.perf_counter", side_effect=itertools.count(0, .0001)):
+                bot.SelectMove(moves, gs)
+            self.assertGreaterEqual(bot.last_stats["elapsed_s"], .05)
+            self.assertLess(bot.last_stats["elapsed_s"], .052)
+
     def test_expired_setup_budget_returns_legal_prior_move_without_simulating(self):
         gs = GameState(4, rng=random.Random(42))
         bot = TimedAZPlayer(gs.first_player, self.net, .001, seed=7)

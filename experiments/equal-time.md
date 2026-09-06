@@ -14,7 +14,9 @@ python bench_equal_time.py --games 48 --budgets .2 .5 --workers 4 --seed 91000 -
 ```
 
 This is a fresh evaluation set, distinct from the previous fixed-simulation
-pilot and follow-up. A four-game engineering smoke run at seed 90000 and 0.1
+pilot and follow-up. An initial main-run attempt was stopped after timing-only inspection revealed unused
+AZ budget for non-power-of-two candidate counts; its outcomes are excluded.
+The phase count was corrected before restarting. A four-game engineering smoke run at seed 90000 and 0.1
 seconds was used only to check execution and time accounting; it is not included
 in the results. The sample size and budgets were chosen before main-run outcomes.
 

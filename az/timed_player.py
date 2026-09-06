@@ -33,7 +33,7 @@ class TimedAZPlayer(Player):
         root = _Node(AzulSim(game_state, self.id).sample_hidden(self.rng))
         _expand(root, self.net.forward)
         candidates = list(np.argsort(root.logits)[::-1][:MAX_CONSIDERED])
-        phases = max(1, int(math.ceil(math.log2(len(candidates)))))
+        phases = max(1, int(math.log2(len(candidates))))
         deadline = start + self.seconds
         for phase in range(phases):
             if len(candidates) == 1:
