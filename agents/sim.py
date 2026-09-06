@@ -8,6 +8,7 @@ awkward for tree search. AzulSim moves one ply at a time and exposes:
 """
 import copy
 import os
+import random
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -15,7 +16,9 @@ for _cand in (
     os.path.normpath(os.path.join(_HERE, "..", "framework")),
     os.path.normpath(os.path.join(_HERE, "..", "..", "framework")),
 ):
-    if os.path.isdir(_cand) and _cand not in sys.path:
+    if os.path.isdir(_cand):
+        if _cand in sys.path:
+            sys.path.remove(_cand)
         sys.path.insert(0, _cand)
         break
 
@@ -85,6 +88,8 @@ def _fast_clone_player(p):
 
 def _fast_clone_gs(gs):
     new = GameState.__new__(GameState)
+    new.rng = random.Random(0)
+    new.rng.setstate(gs.rng.getstate())
     new.players = [_fast_clone_player(p) for p in gs.players]
     new.bag = gs.bag[:]
     new.bag_used = gs.bag_used[:]
@@ -137,3 +142,31 @@ class AzulSim:
 
     def scores(self):
         return [p.score for p in self.gs.players]
+
+    def sample_hidden(self, rng):
+        """Sample a possible hidden world without reading actual draw order/RNG.
+
+        Counts can be reconstructed by tracking public tiles. Sorting first
+        makes a fixed search seed invariant to permutations of the real bag.
+        A fresh sample is needed per simulation when averaging future draws.
+        """
+        new = self.clone()
+        new.gs.bag.sort()
+        new.gs.bag_used.sort()
+        rng.shuffle(new.gs.bag)
+        rng.shuffle(new.gs.bag_used)
+        new.gs.rng = random.Random(rng.getrandbits(64))
+        return new
+
+    def winners(self):
+        """Official tiebreak: score, then completed horizontal wall rows."""
+        ranks = [(p.score, p.GetCompletedRows()) for p in self.gs.players]
+        best = max(ranks)
+        return [i for i, rank in enumerate(ranks) if rank == best]
+
+    def win_values(self):
+        if not self.terminal:
+            raise ValueError("Win outcomes require a finished game")
+        winners = self.winners()
+        return [1.0 / len(winners) if i in winners else 0.0
+                for i in range(len(self.gs.players))]

@@ -12,6 +12,8 @@ for candidate in (
     os.path.join(_HERE, "framework"),
     os.path.normpath(os.path.join(_HERE, "..", "framework")),
 ):
-    if os.path.isdir(candidate) and candidate not in sys.path:
+    if os.path.isdir(candidate):
+        if candidate in sys.path:
+            sys.path.remove(candidate)
         sys.path.insert(0, candidate)
         break

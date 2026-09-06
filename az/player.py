@@ -4,6 +4,7 @@ Used both for evaluation (az vs baselines) and for serving in the web app.
 Targets the 4-player game.
 """
 import os
+import random
 import sys
 
 import numpy as np
@@ -13,7 +14,9 @@ for _cand in (
     os.path.normpath(os.path.join(_HERE, "..", "framework")),
     os.path.normpath(os.path.join(_HERE, "..", "..", "framework")),
 ):
-    if os.path.isdir(_cand) and _cand not in sys.path:
+    if os.path.isdir(_cand):
+        if _cand in sys.path:
+            sys.path.remove(_cand)
         sys.path.insert(0, _cand)
         break
 
@@ -28,7 +31,7 @@ from agents.sim import AzulSim  # noqa: E402
 
 class AZPlayer(Player):
     def __init__(self, _id, net, n_sims=160, c_puct=1.5, name="azero",
-                 encode_fn=None, algo="puct"):
+                 encode_fn=None, algo="puct", seed=None):
         super().__init__(_id)
         self.net = net
         self.n_sims = n_sims
@@ -36,13 +39,16 @@ class AZPlayer(Player):
         self.name = name
         self.encode_fn = encode_fn  # None -> current encoder; pass v1 for old nets
         self.algo = algo            # "puct" or "gumbel" (gumbel uses current encoder)
+        self.rng = random.Random(seed)
 
     @classmethod
     def from_weights(cls, _id, path, **kw):
         return cls(_id, NumpyNet.load(path), **kw)
 
     def SelectMove(self, moves, game_state):
-        sim = AzulSim(game_state, self.id)
+        # Legacy search considers one hypothetical future per decision. It
+        # must never receive the game's actual hidden tile order.
+        sim = AzulSim(game_state, self.id).sample_hidden(self.rng)
         if self.algo == "gumbel":
             a, _, _ = gumbel_search(sim, self.net.forward, n_sims=self.n_sims,
                                     add_noise=False)  # deterministic strongest move
