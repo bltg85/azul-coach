@@ -130,6 +130,7 @@ class OpponentSearchPlayer(Player):
         raise RuntimeError("Rollout did not finish; no fabricated terminal outcome recorded")
 
     def SelectMove(self, moves, game_state):
+        start = time.perf_counter()
         if len(game_state.players) != 4:
             raise ValueError("Opponent search currently supports four players only")
         if not moves:
@@ -138,7 +139,6 @@ class OpponentSearchPlayer(Player):
         key = public_key(root_sim)
         root = _Node(root_sim, self.predictor)
         nodes = {key: root}
-        start = time.perf_counter()
         done = 0
         for _ in range(self.iterations):
             if done and self.time_budget_s is not None and time.perf_counter() - start >= self.time_budget_s:

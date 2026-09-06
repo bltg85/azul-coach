@@ -91,3 +91,11 @@ The 8-second UI budget can overrun by one complete simulation.
    calibrate response probabilities by skill or player instead of assuming 85/15.
 4. Only then consider training a terminal win-value head to replace expensive
    rollouts, evaluating search quality before scaling self-play training.
+
+
+## Equal-time follow-up
+
+The [equal-time experiment](equal-time.md) completed 96 fresh evaluation games.
+The new method won 5/48 at 0.2 seconds and 6/48 at 0.5 seconds per move against
+three time-adapted AZ bots with matching budgets. Keep Aragon as the default;
+the earlier result with unequal compute did not establish an improvement.
