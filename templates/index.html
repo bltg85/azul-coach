@@ -52,9 +52,8 @@
             <div class="game-over">
                 <h2>Game over</h2>
                 <div class="final-scores">
-                    {% set winning = view.scores | max %}
                     {% for p in view.players %}
-                        <div class="{% if view.scores[p.id] == winning %}winner{% endif %}">
+                        <div class="{% if p.id in view.winner_seats %}winner{% endif %}">
                             {{ p.name }}: {{ view.scores[p.id] }}
                         </div>
                     {% endfor %}
@@ -255,18 +254,31 @@
                             <label style="font-size:12px">Iterations:</label>
                             <select name="iter">
                                 <option value="300">300 (fast)</option>
-                                <option value="1000" selected>1000 (~5s)</option>
-                                <option value="2000">2000 (~10s)</option>
+                                <option value="1000" selected>1000</option>
+                                <option value="2000">2000</option>
                             </select>
                             <button type="submit" class="primary" style="margin-top:8px;width:100%">
                                 Ask coach for top moves
                             </button>
+                            {% if view.opponent_coach_available %}
+                            <button type="submit" name="engine" value="opponent" class="secondary" style="margin-top:8px;width:100%">
+                                Try opponent-aware coach (experimental)
+                            </button>
+                            {% endif %}
                         </form>
                     {% else %}
                         <div style="color:var(--muted);font-size:12px">Coach is available on your turn.</div>
                     {% endif %}
 
                     {% if view.coach %}
+                        <p class="coach-meta">
+                            {% if view.coach.experimental %}
+                            Experimental: assumes opponents mostly choose the network's top three moves.
+                            Values are simulated win shares, not measured chances against humans.
+                            {% else %}
+                            Values are relative score estimates, not win probabilities.
+                            {% endif %}
+                        </p>
                         <div style="margin-top:12px;font-size:11px;color:var(--muted)">
                             {{ view.coach.iterations }} iter / {{ "%.1f"|format(view.coach.elapsed_s) }}s
                         </div>

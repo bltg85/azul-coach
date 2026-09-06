@@ -48,6 +48,7 @@ from utils import Move, MoveToString, Tile  # noqa: E402
 
 from agents.mcts import MCTSPlayer  # noqa: E402
 from agents.sim import AzulSim  # noqa: E402
+from agents.opponent_search import OpponentSearchPlayer  # noqa: E402
 
 # AlphaZero net (optional). Imports numpy only; torch is never needed to
 # serve. If the weights file is present we use it as the opponent in
@@ -236,7 +237,7 @@ def save_game_log(game, sid):
         return None
     now = datetime.datetime.now()
     scores = sim.scores()
-    winners = [i for i, s in enumerate(scores) if s == max(scores)]
+    winners = sim.winners()
     payload = {
         "schema_version": 1,
         "session_id_prefix": sid[:8],
@@ -426,6 +427,8 @@ def build_view(game):
         "is_user_turn": sim.cur == game["user_seat"] and not sim.terminal,
         "game_over": sim.terminal,
         "scores": sim.scores() if sim.terminal else None,
+        "winner_seats": sim.winners() if sim.terminal else [],
+        "opponent_coach_available": AZ_NET is not None and len(gs.players) == 4,
         "coach": game["coach"],
         "coach_busy": game["coach_busy"],
         "undo_count": len(game["history"]),
@@ -462,8 +465,7 @@ def new_game():
     _, game = get_game()
     with game["lock"]:
         import random
-        random.seed(seed)
-        gs = GameState(n_players)
+        gs = GameState(n_players, rng=random.Random(seed))
         for p in gs.players:
             p.player_trace.StartRound()
         game["sim"] = AzulSim(gs, gs.first_player)
@@ -595,11 +597,17 @@ def undo():
 @app.route("/coach", methods=["POST"])
 def get_coach():
     iters = max(1, min(int(request.form.get("iter", 1000)), MAX_COACH_ITER))
+    experimental = request.form.get("engine") == "opponent"
     _, game = get_game()
     with game["lock"]:
         sim = game["sim"]
         if sim is None or sim.terminal or sim.cur != game["user_seat"]:
             game["message"] = "Coach only available on your turn."
+            return redirect(url_for("index"))
+        if game["coach_busy"]:
+            return redirect(url_for("index"))
+        if experimental and (AZ_NET is None or len(sim.gs.players) != 4):
+            game["message"] = "Opponent-aware coach requires four players and network weights."
             return redirect(url_for("index"))
         moves = sim.legal_moves()
         if not moves:
@@ -607,14 +615,25 @@ def get_coach():
         gs_copy = deepcopy(sim.gs)
         moves_copy = deepcopy(moves)
         user_seat = game["user_seat"]
+        source_log_len = len(game["log"])
         game["coach_busy"] = True
     # Heavy MCTS work outside the lock so other routes for THIS session
     # aren't blocked. (Different sessions are independent anyway.)
     t0 = time.time()
-    coach_bot = MCTSPlayer(user_seat, iterations=iters)
-    coach_bot.SelectMove(moves_copy, gs_copy)
+    if experimental:
+        coach_bot = OpponentSearchPlayer(user_seat, AZ_NET,
+                                        iterations=min(iters, 128), time_budget_s=8.0)
+    else:
+        coach_bot = MCTSPlayer(user_seat, iterations=iters)
+    try:
+        coach_bot.SelectMove(moves_copy, gs_copy)
+    finally:
+        with game["lock"]:
+            game["coach_busy"] = False
     elapsed = time.time() - t0
     with game["lock"]:
+        if game["sim"] is not sim or len(game["log"]) != source_log_len:
+            return redirect(url_for("index"))
         stats = coach_bot.last_stats
         top = []
         for c in stats["candidates"][:5]:
@@ -632,9 +651,10 @@ def get_coach():
             "iterations": stats["iterations"],
             "elapsed_s": elapsed,
             "candidates": top,
+            "experimental": experimental,
         }
         game["coach_busy"] = False
-        game["message"] = f"Coach: {iters} iter in {elapsed:.1f}s. Top move highlighted."
+        game["message"] = f"Coach: {stats['iterations']} simulations in {elapsed:.1f}s."
     return redirect(url_for("index"))
 
 

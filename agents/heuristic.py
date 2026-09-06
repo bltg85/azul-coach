@@ -24,7 +24,9 @@ for _cand in (
     os.path.normpath(os.path.join(_HERE, "..", "framework")),       # vendored
     os.path.normpath(os.path.join(_HERE, "..", "..", "framework")), # sibling
 ):
-    if os.path.isdir(_cand) and _cand not in sys.path:
+    if os.path.isdir(_cand):
+        if _cand in sys.path:
+            sys.path.remove(_cand)
         sys.path.insert(0, _cand)
         break
 

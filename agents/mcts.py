@@ -25,7 +25,9 @@ for _cand in (
     os.path.normpath(os.path.join(_HERE, "..", "framework")),
     os.path.normpath(os.path.join(_HERE, "..", "..", "framework")),
 ):
-    if os.path.isdir(_cand) and _cand not in sys.path:
+    if os.path.isdir(_cand):
+        if _cand in sys.path:
+            sys.path.remove(_cand)
         sys.path.insert(0, _cand)
         break
 
@@ -89,13 +91,13 @@ def fast_heuristic_rollout(pid, moves, gs):
 class _Node:
     __slots__ = ("sim", "parent", "move", "children", "untried", "visits", "value_sum")
 
-    def __init__(self, sim, parent, move):
+    def __init__(self, sim, parent, move, rng):
         self.sim = sim
         self.parent = parent
         self.move = move
         self.children = []
         self.untried = sim.legal_moves() if not sim.terminal else []
-        random.shuffle(self.untried)  # avoid deterministic expansion order bias
+        rng.shuffle(self.untried)  # avoid deterministic expansion order bias
         self.visits = 0
         self.value_sum = [0.0] * len(sim.gs.players)
 
@@ -124,14 +126,15 @@ def _ucb_select(node, c):
 ROLLOUT_PLY_LIMIT = 300  # safety net; normal games end in <100 plies
 
 
-def _rollout(sim, policy):
+def _rollout(sim, policy, rng):
     sim = sim.clone()
     plies = 0
     while not sim.terminal and plies < ROLLOUT_PLY_LIMIT:
         moves = sim.legal_moves()
         if not moves:
             break  # defensive — shouldn't happen but don't loop forever
-        move = policy(sim.cur, moves, sim.gs)
+        move = (rng.choice(moves) if policy is random_rollout
+                else policy(sim.cur, moves, sim.gs))
         sim.apply(move)
         plies += 1
     # If we bailed out before terminal, give end-of-game bonuses on the
@@ -152,7 +155,7 @@ def _backprop(node, normalised_scores):
 
 def mcts_search(root_sim, iterations=None, time_budget_s=None,
                 rollout_policy=fast_heuristic_rollout, c=1.4,
-                root_moves=None):
+                root_moves=None, rng=None):
     """Run MCTS. Provide either iterations OR time_budget_s.
 
     Returns (root_node, num_iterations_done).
@@ -162,10 +165,11 @@ def mcts_search(root_sim, iterations=None, time_budget_s=None,
     """
     if iterations is None and time_budget_s is None:
         iterations = 500
-    root = _Node(root_sim.clone(), parent=None, move=None)
+    rng = rng if rng is not None else random.Random()
+    root = _Node(root_sim.sample_hidden(rng), parent=None, move=None, rng=rng)
     if root_moves is not None:
         root.untried = list(root_moves)
-        random.shuffle(root.untried)
+        rng.shuffle(root.untried)
     deadline = time.time() + time_budget_s if time_budget_s is not None else None
     iters_done = 0
     while True:
@@ -183,14 +187,14 @@ def mcts_search(root_sim, iterations=None, time_budget_s=None,
             move = node.untried.pop()
             child_sim = node.sim.clone()
             child_sim.apply(move)
-            child = _Node(child_sim, parent=node, move=move)
+            child = _Node(child_sim, parent=node, move=move, rng=rng)
             node.children.append(child)
             node = child
         # Rollout
         if node.sim.terminal:
             scores = _normalise_scores(node.sim.scores())
         else:
-            scores = _rollout(node.sim, rollout_policy)
+            scores = _rollout(node.sim, rollout_policy, rng)
         _backprop(node, scores)
         iters_done += 1
     return root, iters_done
@@ -203,7 +207,7 @@ def mcts_search(root_sim, iterations=None, time_budget_s=None,
 class MCTSPlayer(Player):
     def __init__(self, _id, iterations=1000, time_budget_s=None,
                  rollout_policy=fast_heuristic_rollout, c=1.4, name="mcts",
-                 top_k=20):
+                 top_k=20, seed=None):
         super().__init__(_id)
         self.iterations = iterations
         self.time_budget_s = time_budget_s
@@ -211,6 +215,7 @@ class MCTSPlayer(Player):
         self.c = c
         self.name = name
         self.top_k = top_k
+        self.rng = random.Random(seed)
         self._heuristic = HeuristicPlayer(_id)
         self.last_stats = None  # populated after each SelectMove for coaching
 
@@ -233,6 +238,7 @@ class MCTSPlayer(Player):
             rollout_policy=self.rollout_policy,
             c=self.c,
             root_moves=pruned,
+            rng=self.rng,
         )
         if not root.children:
             return moves[0]  # only happens if no legal moves (shouldn't)

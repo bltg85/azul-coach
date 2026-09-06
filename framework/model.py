@@ -432,7 +432,9 @@ class GameState:
     NUM_TILE_TYPE = 20
     NUM_ON_FACTORY = 4
 
-    def __init__(self, num_players):
+    def __init__(self, num_players, rng=None):
+        # Game draws must not depend on how much thinking a bot performs.
+        self.rng = rng if rng is not None else random.Random(random.getrandbits(64))
         # Create player states
         self.players = []
         for i in range(num_players):
@@ -449,7 +451,7 @@ class GameState:
             self.bag.append(Tile.WHITE)
 
         # Shuffle contents of tile bag
-        random.shuffle(self.bag)
+        self.rng.shuffle(self.bag)
 
         # "Used" bag is initial empty
         self.bag_used = []
@@ -466,7 +468,7 @@ class GameState:
 
         self.centre_pool = TileDisplay()
         self.first_player_taken = False
-        self.first_player = random.randrange(num_players)
+        self.first_player = self.rng.randrange(num_players)
         self.next_first_player = -1
 
 
@@ -493,7 +495,7 @@ class GameState:
         # If there are less than NUM_ON_FACTORY tiles available in both
         # bags, the factory will be left at partial capacity.
         if len(self.bag) < self.NUM_ON_FACTORY and len(self.bag_used) > 0:
-            random.shuffle(self.bag_used)
+            self.rng.shuffle(self.bag_used)
             self.bag.extend(self.bag_used)
             self.bag_used = []
 
@@ -615,7 +617,7 @@ class GameRunner:
             assert(plyr.id == i)    
             i += 1
 
-        self.game_state = GameState(len(player_list))
+        self.game_state = GameState(len(player_list), rng=random.Random(seed))
         self.players = player_list
 
 
