@@ -19,3 +19,6 @@ runs/
 *.npz
 # ...except the weights actually shipped for serving
 !az/weights/*.npz
+
+# Postpartum app icons (PNG)
+!postpartum-training/icons/*.png

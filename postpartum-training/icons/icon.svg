@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Igång igen">
+  <rect width="512" height="512" rx="112" fill="#c9705a"/>
+  <path d="M256 412c-8 0-16-3-22-9L118 287c-32-32-32-84 0-116 30-30 78-32 110-6l28 24 28-24c32-26 80-24 110 6 32 32 32 84 0 116L278 403c-6 6-14 9-22 9z" fill="#fbf3ea"/>
+  <path d="M170 256h40l22-44 34 88 24-44h52" fill="none" stroke="#c9705a" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
